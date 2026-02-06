@@ -6,26 +6,25 @@ from pathlib import Path
 
 from image_edit_dataset_factory.backends.edit_base import EditorBackend
 from image_edit_dataset_factory.core.config import AppConfig
-from image_edit_dataset_factory.core.schema import SampleModel, SourceMetadata
+from image_edit_dataset_factory.core.schema import DecomposeRecord, SampleRecord, SourceSample
 
 
 @dataclass
 class GenerationContext:
     cfg: AppConfig
-    intermediate_dir: Path
+    staging_dir: Path
     edit_backend: EditorBackend
 
 
-class SampleGenerator(ABC):
-    category: str
+class BaseGenerator(ABC):
+    edit_task: str
 
     def __init__(self, context: GenerationContext) -> None:
         self.context = context
 
     @abstractmethod
-    def generate_for_source(
+    def generate(
         self,
-        source_meta: SourceMetadata,
-        decompose_manifest: dict[str, object],
-        seed_index: int,
-    ) -> list[SampleModel]: ...
+        source: SourceSample,
+        decompose: DecomposeRecord,
+    ) -> SampleRecord: ...

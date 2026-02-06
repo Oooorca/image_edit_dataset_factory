@@ -1,85 +1,65 @@
 from __future__ import annotations
 
-import csv
-import json
 import logging
-import shutil
 from pathlib import Path
 
 from image_edit_dataset_factory.core.config import AppConfig
-from image_edit_dataset_factory.core.schema import SourceMetadata
+from image_edit_dataset_factory.core.paths import resolve_paths
+from image_edit_dataset_factory.core.schema import SourceSample
 from image_edit_dataset_factory.utils.image_io import image_shape, is_image_file
 from image_edit_dataset_factory.utils.jsonl import write_jsonl
+from image_edit_dataset_factory.utils.validators import validate_image
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _load_manifest(manifest_path: Path) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    if manifest_path.suffix.lower() == ".jsonl":
-        with manifest_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if line:
-                    rows.append(json.loads(line))
-        return rows
-
-    if manifest_path.suffix.lower() == ".csv":
-        with manifest_path.open("r", encoding="utf-8") as handle:
-            reader = csv.DictReader(handle)
-            rows.extend(reader)
-        return rows
-
-    msg = f"Unsupported manifest format: {manifest_path}"
-    raise ValueError(msg)
-
-
-def _iter_source_files(cfg: AppConfig, root: Path) -> list[Path]:
-    if cfg.ingest.manifest_path:
-        manifest_rows = _load_manifest(Path(cfg.ingest.manifest_path))
-        return [Path(item["image_path"]) for item in manifest_rows if "image_path" in item]
-
-    pattern = "**/*" if cfg.ingest.recursive else "*"
-    return sorted([p for p in root.glob(pattern) if p.is_file() and is_image_file(p)])
+def _iter_images(root: Path, recursive: bool) -> list[Path]:
+    pattern = "**/*" if recursive else "*"
+    return sorted(path for path in root.glob(pattern) if path.is_file() and is_image_file(path))
 
 
 def run_ingest(cfg: AppConfig) -> Path:
-    root = Path(cfg.paths.root)
-    raw_images_dir = root / cfg.paths.data_dir / "raw" / "images"
-    raw_images_dir.mkdir(parents=True, exist_ok=True)
+    paths = resolve_paths(cfg)
+    paths.ensure_runtime_dirs()
 
-    source_root = Path(cfg.ingest.source_dir)
-    source_files = _iter_source_files(cfg, source_root)
-    LOGGER.info("ingest_found_sources count=%s", len(source_files))
+    rows: list[dict[str, object]] = []
+    source_counter = 0
 
-    records: list[dict[str, object]] = []
-    for idx, src in enumerate(source_files, start=1):
-        source_id = f"src_{idx:06d}"
-        ext = src.suffix.lower() if src.suffix else ".jpg"
-        dest = raw_images_dir / f"{source_id}{ext}"
+    for category in cfg.ingest.include_categories:
+        category_dir = paths.data_root / category
+        if not category_dir.exists():
+            LOGGER.warning("ingest_missing_category category=%s path=%s", category, category_dir)
+            continue
 
-        if not dest.exists():
-            if cfg.ingest.symlink:
-                try:
-                    dest.symlink_to(src.resolve())
-                except FileExistsError:
-                    pass
-                except OSError:
-                    shutil.copy2(src, dest)
-            else:
-                shutil.copy2(src, dest)
+        images = _iter_images(category_dir, recursive=cfg.ingest.recursive)
+        if cfg.ingest.max_images_per_category > 0:
+            images = images[: cfg.ingest.max_images_per_category]
 
-        width, height = image_shape(dest)
-        source_meta = SourceMetadata(
-            source_id=source_id,
-            image_path=str(dest),
-            width=width,
-            height=height,
-            scene="mixed",
-        )
-        records.append(source_meta.model_dump(mode="json"))
+        for image_path in images:
+            if cfg.filter.enabled:
+                result = validate_image(image_path, cfg.filter)
+                if not result.passed:
+                    LOGGER.info(
+                        "ingest_filtered_out path=%s reasons=%s",
+                        image_path,
+                        ",".join(result.reasons),
+                    )
+                    continue
 
-    source_meta_path = raw_images_dir.parent / "source_meta.jsonl"
-    write_jsonl(source_meta_path, records)
-    LOGGER.info("ingest_written_metadata path=%s count=%s", source_meta_path, len(records))
-    return source_meta_path
+            source_counter += 1
+            width, height = image_shape(image_path)
+            source = SourceSample(
+                source_id=f"src_{source_counter:06d}",
+                dataset_category=category,
+                image_path=str(image_path),
+                width=width,
+                height=height,
+                scene="mixed",
+                metadata={"relative_path": str(image_path.relative_to(paths.data_root))},
+            )
+            rows.append(source.model_dump(mode="json"))
+
+    manifest_path = paths.manifests_dir / "source_manifest.jsonl"
+    write_jsonl(manifest_path, rows)
+    LOGGER.info("ingest_done count=%s manifest=%s", len(rows), manifest_path)
+    return manifest_path

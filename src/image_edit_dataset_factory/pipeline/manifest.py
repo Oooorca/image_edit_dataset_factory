@@ -11,7 +11,10 @@ from image_edit_dataset_factory.utils.jsonl import write_jsonl
 def write_sample_manifest(sample: SampleModel, path: str | Path) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(sample.model_dump_json(indent=2, ensure_ascii=False), encoding="utf-8")
+    target.write_text(
+        json.dumps(sample.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def write_global_index(

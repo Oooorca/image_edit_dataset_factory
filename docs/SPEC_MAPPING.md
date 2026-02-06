@@ -1,34 +1,42 @@
-# Spec Mapping
+# SPEC Mapping
 
-## Core requirements
+## 目录与架构
 
-- 5 categories + subtypes: `src/image_edit_dataset_factory/core/enums.py`
-- Folder hierarchy `category/subtype/scene`: `src/image_edit_dataset_factory/pipeline/export.py`
-- Naming (`00001.jpg`, `_CH`, `_EN`, `_mask`, `_mask-1`, `_result`): `src/image_edit_dataset_factory/utils/naming.py`, `src/image_edit_dataset_factory/pipeline/export.py`
-- Structured configs + datamodels: `src/image_edit_dataset_factory/core/config.py`, `src/image_edit_dataset_factory/core/schema.py`
+- Core: `src/image_edit_dataset_factory/core/`
+- Utils: `src/image_edit_dataset_factory/utils/`
+- Backends: `src/image_edit_dataset_factory/backends/`
+- Pipeline: `src/image_edit_dataset_factory/pipeline/`
+- QA: `src/image_edit_dataset_factory/qa/`
+- Scripts: `src/image_edit_dataset_factory/scripts/`
 
-## Zero tolerance checks
+## 只读数据输入
 
-- Corruption, naming, required files, orientation, shape checks: `src/image_edit_dataset_factory/qa/linter.py`
-- Linter non-zero exit code in CLI: `src/image_edit_dataset_factory/scripts/run_lint.py`, `src/image_edit_dataset_factory/scripts/run_all.py`
+- 输入扫描：`pipeline/ingest.py`
+- 不复制、不移动原图：直接保存路径到 `outputs/manifests/source_manifest.jsonl`
 
-## QA checks
+## 模型后端（ModelScope + lazy + optional）
 
-- Non-edit region unchanged check: `src/image_edit_dataset_factory/qa/consistency.py`
-- Allowed region = dilated mask: `src/image_edit_dataset_factory/utils/mask_ops.py`, `src/image_edit_dataset_factory/qa/consistency.py`
-- QA CSV/JSON summaries: `src/image_edit_dataset_factory/qa/report.py`
+- Layered: `backends/qwen_layered_modelscope.py`
+- Edit: `backends/qwen_image_edit_modelscope.py`
+- 不自动下载：缺模型目录时明确报错
+- Mock/Fallback：`backends/mock_backend.py`, `backends/opencv_fallback.py`
 
-## Semantic mask requirements
+## 生成任务映射
 
-- White object on black mask + derived `mask-1`: `src/image_edit_dataset_factory/pipeline/generate/semantic.py`
-- Mask morphology/refine: `src/image_edit_dataset_factory/utils/mask_ops.py`
+- 中文类别枚举：`core/enums.py`
+- 配置映射：`generate.category_to_task`
+- 生成器实现：
+  - `generate/structural.py`
+  - `generate/semantic.py`
+  - `generate/consistency.py`
 
-## Backends
+## 导出与命名
 
-- Layered backend interface + Qwen skeleton + mock: `src/image_edit_dataset_factory/backends/`
-- Edit backend interface + Qwen skeleton + OpenCV fallback + mock: `src/image_edit_dataset_factory/backends/`
+- 导出：`pipeline/export.py`
+- 命名规则：`utils/naming.py`
 
-## Resumable pipeline
+## QA
 
-- Stage skip on existing outputs (resume mode): `src/image_edit_dataset_factory/pipeline/orchestrator.py`
-- Layer decompose cache skip unless overwrite: `src/image_edit_dataset_factory/pipeline/decompose.py`
+- Linter：`qa/linter.py`
+- 非编辑区一致性：`qa/consistency.py`
+- 报告：`qa/report.py`

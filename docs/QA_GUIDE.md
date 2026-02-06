@@ -1,35 +1,26 @@
 # QA Guide
 
-## Linter
+## 1) Linter
 
-`run_lint` enforces zero-tolerance checks:
+检查项：
 
-- filename pattern correctness
-- required files present
-- semantic mask requirements
-- readable/corruption checks
-- source/result dimension and orientation consistency
+- 文件命名格式
+- 必需文件是否齐全
+- 图片损坏
+- source/result 分辨率一致性
 
-Any lint issue returns non-zero exit.
+报告：`outputs/reports/lint_issues.json`
 
-## Non-edit region consistency
+## 2) 非编辑区域不变
 
-For each sample:
+流程：
 
-1. Build allowed edit region from `metadata.allowed_region_mask_path` or dilated mask.
-2. Compare source vs result outside allowed region.
-3. Compute:
-   - `mse_outside_region`
-   - `ssim_outside_region`
-   - `changed_pixel_ratio_outside_region`
-4. Mark fail if thresholds in config are violated.
+1. 获取允许编辑区域（`allowed_region_mask_path` 或主 mask 膨胀）
+2. 在允许区域外比较 source/result
+3. 计算 MSE、SSIM、像素变更比例
+4. 按阈值判定 pass/fail
 
-Outputs:
+报告：
 
 - `outputs/reports/qa/qa_scores.csv`
 - `outputs/reports/qa/qa_summary.json`
-
-## Optional checks
-
-- `qa/face_id.py`: guarded stub for face consistency
-- `qa/ocr_check.py`: guarded stub for text OCR validation

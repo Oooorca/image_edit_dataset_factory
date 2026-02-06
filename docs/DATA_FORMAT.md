@@ -1,34 +1,19 @@
 # Data Format
 
-## Export Root
+导出路径：
 
-`outputs/dataset/<category>/<subtype>/<scene>/`
+`outputs/dataset/<edit_task>/<subtype>/<scene>/`
 
-## Required naming
+每条样本（ID=00001）包含：
 
-Per sample ID `00001`:
+- `00001.jpg`
+- `00001_result.jpg`
+- `00001_CH.txt`
+- `00001_EN.txt`
+- `00001_mask.png`
+- `00001_mask-1.png`
 
-- `00001.jpg` (source image)
-- `00001_result.jpg` (edited image)
-- `00001_CH.txt` (Chinese instruction)
-- `00001_EN.txt` (English instruction)
-
-Mask files:
-
-- `00001_mask.png` (primary binary mask, white object on black)
-- `00001_mask-1.png` (secondary/inverted silhouette mask)
-
-For `semantic_edit`, mask and mask-1 are mandatory.
-
-## Manifest/index files
+索引文件：
 
 - `outputs/reports/index.csv`
 - `outputs/reports/index.jsonl`
-
-Each row stores:
-
-- `sample_id, category, subtype, scene`
-- source/result paths
-- mask path list
-- CH/EN instructions
-- metadata (JSON)

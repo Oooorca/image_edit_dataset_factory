@@ -1,59 +1,77 @@
 # Image Edit Dataset Factory
 
-End-to-end pipeline to ingest source images, filter by spec constraints, decompose layers, generate edit pairs, export to strict dataset layout, and run linter/QA checks.
+该项目用于从 `./data/*` 读取图片，构建图像编辑数据集，并执行严格命名与一致性 QA。
 
-## Install
+## 当前支持的数据源目录（只读）
 
-```bash
-make install-dev
-```
+- `data/人物物体一致性`
+- `data/物体一致性`
+- `data/物理变化`
 
-## Quickstart (mock/fallback run)
+说明：流水线不会修改上述目录，不会移动/删除原图；中间产物和结果全部写入 `outputs/`。
 
-1. Create demo inputs (if you do not already have images):
+## 依赖安装
 
-```bash
-python scripts/create_demo_input.py --out data/demo_input --count 4 --size 512
-```
-
-2. Run full pipeline:
+项目只使用一个依赖入口文件：`pyproject.toml`。
 
 ```bash
-python -m image_edit_dataset_factory.scripts.run_all --config configs/dev_small.yaml
+python -m pip install -e .
 ```
 
-3. Inspect outputs:
+开发依赖：
 
-- Dataset: `outputs/dataset/`
-- Global index: `outputs/reports/index.csv`
-- Lint report: `outputs/reports/lint_issues.json`
-- QA report: `outputs/reports/qa/qa_scores.csv`
+```bash
+python -m pip install -e .[dev]
+```
 
-## CLI Steps
+## 运行 Mock/Fallback 全流程（不下载模型）
 
-- `python -m image_edit_dataset_factory.scripts.run_ingest --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_filter --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_decompose --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_generate --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_export --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_lint --config configs/default.yaml`
-- `python -m image_edit_dataset_factory.scripts.run_qa --config configs/default.yaml`
+```bash
+python -m image_edit_dataset_factory.scripts.run_all --config configs/default.yaml
+```
 
-## Config Overrides
+输出位置：
 
-Use `--set key=value` with dotted keys:
+- 清单：`outputs/manifests/`
+- 导出数据集：`outputs/dataset/`
+- 报告：`outputs/reports/`
+- 日志：`logs/`
+
+## 分步运行
+
+```bash
+python -m image_edit_dataset_factory.scripts.run_ingest --config configs/default.yaml
+python -m image_edit_dataset_factory.scripts.run_generate --config configs/default.yaml
+python -m image_edit_dataset_factory.scripts.run_qa --config configs/default.yaml
+```
+
+## 通过配置映射中文类别到编辑任务
+
+`configs/default.yaml` 中：
+
+- `人物物体一致性 -> consistency_edit`
+- `物体一致性 -> semantic_edit`
+- `物理变化 -> structural_edit`
+
+可通过 `--set` 覆盖：
 
 ```bash
 python -m image_edit_dataset_factory.scripts.run_all \
-  --config configs/dev_small.yaml \
-  --set generate.dry_run=true \
-  --set qa.max_mse_outside_region=8.0
+  --config configs/default.yaml \
+  --set generate.category_to_task."物体一致性"=structural_edit
 ```
 
-## Qwen Backends
+## 后续启用 ModelScope Qwen（仅当模型已提前下载）
 
-- Layered decomposition backend: `decompose.backend=qwen`
-- Edit backend: `edit.backend=qwen`
-- If model packages/weights are unavailable, switch to `mock`/`opencv` backends.
+本项目不会自动下载模型。需要先在服务器手工下载，再配置本地目录：
 
-See `configs/gpu_qwen.yaml` for an example GPU config.
+- `qwen/Qwen-Image-Layered`
+- `Qwen/Qwen-Image-Edit`
+
+示例配置见：`configs/server_qwen.yaml`
+
+```bash
+python -m image_edit_dataset_factory.scripts.run_all --config configs/server_qwen.yaml
+```
+
+如果模型目录不存在，程序会报清晰错误并退出，不会触发下载。

@@ -3,7 +3,8 @@ from pathlib import Path
 import numpy as np
 
 from image_edit_dataset_factory.core.config import QAConfig
-from image_edit_dataset_factory.core.schema import SampleModel
+from image_edit_dataset_factory.core.enums import EditTask
+from image_edit_dataset_factory.core.schema import SampleRecord
 from image_edit_dataset_factory.qa.consistency import check_non_edit_region
 from image_edit_dataset_factory.utils.image_io import write_image_rgb, write_mask
 
@@ -23,11 +24,13 @@ def test_non_edit_region_check_passes_when_change_is_inside_mask(tmp_path: Path)
     write_image_rgb(result_path, result)
     write_mask(mask_path, mask)
 
-    sample = SampleModel(
+    sample = SampleRecord(
         sample_id="00001",
-        category="semantic_edit",
+        dataset_category="物体一致性",
+        edit_task=EditTask.SEMANTIC,
         subtype="delete",
         scene="mixed",
+        source_id="src_000001",
         src_image_path=str(src_path),
         result_image_path=str(result_path),
         mask_paths=[str(mask_path)],

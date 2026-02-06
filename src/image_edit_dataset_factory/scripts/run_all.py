@@ -7,12 +7,11 @@ from image_edit_dataset_factory.scripts.common import load_runtime_config, parse
 
 
 def main() -> int:
-    parser = parse_common_args("Run end-to-end dataset pipeline")
+    parser = parse_common_args("Run full pipeline")
     args = parser.parse_args()
-    cfg = load_runtime_config(args.config, args.set, args.no_json_logs, run_name=args.run_name)
+    cfg = load_runtime_config(args.config, args.set, args.no_json_logs, args.run_name)
 
-    orchestrator = PipelineOrchestrator(cfg)
-    summary = orchestrator.run()
+    summary = PipelineOrchestrator(cfg).run()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
     if int(summary.get("lint_issue_count", 0)) > 0:

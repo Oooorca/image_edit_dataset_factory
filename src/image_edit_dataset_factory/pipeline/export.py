@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import csv
+import json
 import logging
+import shutil
 from pathlib import Path
 
-from image_edit_dataset_factory.core.schema import SampleModel
+from image_edit_dataset_factory.core.config import AppConfig
+from image_edit_dataset_factory.core.paths import resolve_paths
+from image_edit_dataset_factory.core.schema import SampleRecord
 from image_edit_dataset_factory.utils.image_io import (
     read_image_rgb,
     read_mask,
@@ -16,7 +21,6 @@ from image_edit_dataset_factory.utils.naming import (
     instruction_ch_name,
     instruction_en_name,
     mask_name,
-    next_id_from_dataset_root,
     result_image_name,
     source_image_name,
 )
@@ -25,58 +29,114 @@ from image_edit_dataset_factory.utils.text_ops import write_utf8_text
 LOGGER = logging.getLogger(__name__)
 
 
-def _category_dir(dataset_root: Path, sample: SampleModel) -> Path:
-    return dataset_root / str(sample.category) / sample.subtype / sample.scene
+def _write_index(samples: list[SampleRecord], reports_dir: Path) -> tuple[Path, Path]:
+    csv_path = reports_dir / "index.csv"
+    jsonl_path = reports_dir / "index.jsonl"
+
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "sample_id",
+                "dataset_category",
+                "edit_task",
+                "subtype",
+                "scene",
+                "source_id",
+                "src_image_path",
+                "result_image_path",
+                "mask_paths",
+                "instruction_ch",
+                "instruction_en",
+                "metadata",
+            ]
+        )
+        for sample in samples:
+            writer.writerow(
+                [
+                    sample.sample_id,
+                    sample.dataset_category,
+                    sample.edit_task,
+                    sample.subtype,
+                    sample.scene,
+                    sample.source_id,
+                    sample.src_image_path,
+                    sample.result_image_path,
+                    "|".join(sample.mask_paths),
+                    sample.instruction_ch,
+                    sample.instruction_en,
+                    json.dumps(sample.metadata, ensure_ascii=False),
+                ]
+            )
+
+    with jsonl_path.open("w", encoding="utf-8") as handle:
+        for sample in samples:
+            handle.write(json.dumps(sample.model_dump(mode="json"), ensure_ascii=False) + "\n")
+
+    return csv_path, jsonl_path
 
 
-def export_samples(samples: list[SampleModel], dataset_root: str | Path) -> list[SampleModel]:
-    root = Path(dataset_root)
-    root.mkdir(parents=True, exist_ok=True)
+def run_export(cfg: AppConfig) -> Path:
+    paths = resolve_paths(cfg)
+    paths.ensure_runtime_dirs()
 
-    next_index = next_id_from_dataset_root(root)
-    exported: list[SampleModel] = []
+    generated_manifest = paths.manifests_dir / "generated_manifest.jsonl"
+    rows = [
+        json.loads(line)
+        for line in generated_manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    generated = [SampleRecord.model_validate(item) for item in rows]
 
-    for sample in samples:
-        sample_id = format_sample_id(next_index)
-        next_index += 1
+    if not cfg.pipeline.resume and paths.dataset_dir.exists():
+        shutil.rmtree(paths.dataset_dir)
+        paths.dataset_dir.mkdir(parents=True, exist_ok=True)
 
-        out_dir = _category_dir(root, sample)
-        out_dir.mkdir(parents=True, exist_ok=True)
+    exported: list[SampleRecord] = []
+    next_idx = 1
+    for sample in generated:
+        sid = format_sample_id(next_idx)
+        next_idx += 1
 
-        src_out = out_dir / source_image_name(sample_id)
-        result_out = out_dir / result_image_name(sample_id)
-        ch_out = out_dir / instruction_ch_name(sample_id)
-        en_out = out_dir / instruction_en_name(sample_id)
+        scene_dir = paths.dataset_dir / sample.edit_task.value / sample.subtype / sample.scene
+        scene_dir.mkdir(parents=True, exist_ok=True)
+
+        src_out = scene_dir / source_image_name(sid)
+        result_out = scene_dir / result_image_name(sid)
+        ch_out = scene_dir / instruction_ch_name(sid)
+        en_out = scene_dir / instruction_en_name(sid)
 
         write_image_rgb(src_out, read_image_rgb(sample.src_image_path))
         write_image_rgb(result_out, read_image_rgb(sample.result_image_path))
         write_utf8_text(ch_out, sample.instruction_ch)
         write_utf8_text(en_out, sample.instruction_en)
 
-        exported_mask_paths: list[str] = []
+        out_masks: list[str] = []
         if sample.mask_paths:
-            primary = ensure_binary(read_mask(sample.mask_paths[0]))
-            mask_out = out_dir / mask_name(sample_id)
-            write_mask(mask_out, primary)
-            exported_mask_paths.append(str(mask_out))
+            mask0 = ensure_binary(read_mask(sample.mask_paths[0]))
+            mask0_out = scene_dir / mask_name(sid)
+            write_mask(mask0_out, mask0)
+            out_masks.append(str(mask0_out))
 
-            if len(sample.mask_paths) >= 2:
-                secondary = ensure_binary(read_mask(sample.mask_paths[1]))
+            mask1_out = scene_dir / mask_name(sid, index=1)
+            if len(sample.mask_paths) > 1:
+                mask1 = ensure_binary(read_mask(sample.mask_paths[1]))
             else:
-                secondary = invert_mask(primary)
-            mask1_out = out_dir / mask_name(sample_id, index=1)
-            write_mask(mask1_out, secondary)
-            exported_mask_paths.append(str(mask1_out))
+                mask1 = invert_mask(mask0)
+            write_mask(mask1_out, mask1)
+            out_masks.append(str(mask1_out))
 
-        updated = sample.model_copy(
-            update={
-                "sample_id": sample_id,
-                "src_image_path": str(src_out),
-                "result_image_path": str(result_out),
-                "mask_paths": exported_mask_paths,
-            }
+        exported.append(
+            sample.model_copy(
+                update={
+                    "sample_id": sid,
+                    "src_image_path": str(src_out),
+                    "result_image_path": str(result_out),
+                    "mask_paths": out_masks,
+                }
+            )
         )
-        exported.append(updated)
 
-    LOGGER.info("export_done count=%s dataset_root=%s", len(exported), root)
-    return exported
+    _, index_jsonl = _write_index(exported, paths.reports_dir)
+    LOGGER.info("export_done count=%s index=%s", len(exported), index_jsonl)
+    return index_jsonl

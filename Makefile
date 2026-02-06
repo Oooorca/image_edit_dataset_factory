@@ -1,8 +1,8 @@
 PYTHON ?= python
 PIP ?= $(PYTHON) -m pip
-CONFIG ?= configs/dev_small.yaml
+CONFIG ?= configs/default.yaml
 
-.PHONY: install install-dev test lint format run-pipeline run-lint run-qa
+.PHONY: install install-dev test lint format run-all run-ingest run-generate run-qa
 
 install:
 	$(PIP) install -e .
@@ -19,11 +19,14 @@ lint:
 format:
 	$(PYTHON) -m black src tests scripts
 
-run-pipeline:
+run-all:
 	$(PYTHON) -m image_edit_dataset_factory.scripts.run_all --config $(CONFIG)
 
-run-lint:
-	$(PYTHON) -m image_edit_dataset_factory.scripts.run_lint --config $(CONFIG)
+run-ingest:
+	$(PYTHON) -m image_edit_dataset_factory.scripts.run_ingest --config $(CONFIG)
+
+run-generate:
+	$(PYTHON) -m image_edit_dataset_factory.scripts.run_generate --config $(CONFIG)
 
 run-qa:
 	$(PYTHON) -m image_edit_dataset_factory.scripts.run_qa --config $(CONFIG)

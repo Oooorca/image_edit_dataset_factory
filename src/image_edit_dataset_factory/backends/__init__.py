@@ -1,1 +1,1 @@
-"""Backend interfaces and implementations."""
+"""Backend interfaces and optional implementations."""

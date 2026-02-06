@@ -7,7 +7,7 @@ import numpy as np
 
 
 @dataclass
-class LayerData:
+class LayerOutput:
     layer_id: int
     rgba: np.ndarray
     alpha: np.ndarray
@@ -15,5 +15,5 @@ class LayerData:
 
 class LayeredDecomposer(ABC):
     @abstractmethod
-    def decompose(self, image_rgb: np.ndarray) -> list[LayerData]:
-        """Decompose an RGB image into RGBA layers."""
+    def decompose(self, image_rgb: np.ndarray) -> list[LayerOutput]:
+        """Decompose a single image into layered RGBA outputs."""

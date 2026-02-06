@@ -10,26 +10,26 @@ ingest:
     - 物体一致性
     - 物理变化
   recursive: true
-  max_images_per_category: 1
+  max_images_per_category: 1000
 
 filter:
   enabled: true
-  min_width: 128
-  min_height: 128
-  reject_grayscale: false
+  min_width: 512
+  min_height: 512
+  reject_grayscale: true
   reject_borders: false
 
 backends:
-  use_modelscope: false
-  layered_backend: mock
-  edit_backend: opencv
+  use_modelscope: true
+  layered_backend: qwen
+  edit_backend: qwen
   device: cpu
 
 modelscope:
-  enabled: false
-  cache_dir: null
-  qwen_layered_model_dir: null
-  qwen_edit_model_dir: null
+  enabled: true
+  cache_dir: /data/modelscope_cache
+  qwen_layered_model_dir: /models/qwen/Qwen-Image-Layered
+  qwen_edit_model_dir: /models/qwen/Qwen-Image-Edit
 
 generate:
   dry_run: false
@@ -39,14 +39,14 @@ generate:
     物理变化: structural_edit
   subtypes:
     structural_edit: move
-    semantic_edit: delete
+    semantic_edit: replace
     consistency_edit: identity
 
 qa:
   allowed_region_dilation_px: 7
-  max_mse_outside_region: 4.0
-  min_ssim_outside_region: 0.98
-  max_changed_pixel_ratio_outside_region: 0.02
+  max_mse_outside_region: 2.0
+  min_ssim_outside_region: 0.995
+  max_changed_pixel_ratio_outside_region: 0.01
 
 pipeline:
   ingest: true
@@ -54,6 +54,6 @@ pipeline:
   generate: true
   export: true
   qa: true
-  resume: false
+  resume: true
 
 json_logs: true

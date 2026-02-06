@@ -1,86 +1,53 @@
+# Legacy compatibility file. Prefer configs/server_qwen.yaml
 paths:
-  root: .
-  data_dir: data
-  outputs_dir: outputs
-  logs_dir: logs
+  project_root: .
+  data_root: ./data
+  output_root: ./outputs
+  logs_root: ./logs
 
 ingest:
-  source_dir: data/input
-  manifest_path: null
-  symlink: true
+  include_categories:
+    - 人物物体一致性
+    - 物体一致性
+    - 物理变化
   recursive: true
+  max_images_per_category: 1000
 
 filter:
-  min_width: 3840
-  min_height: 2160
+  enabled: true
+  min_width: 512
+  min_height: 512
   reject_grayscale: true
-  reject_borders: true
-  reject_text_like: true
+  reject_borders: false
 
-decompose:
-  backend: qwen
-  max_layers: 12
-  num_workers: 1
-  overwrite: false
+backends:
+  use_modelscope: true
+  layered_backend: qwen
+  edit_backend: qwen
+  device: cpu
 
-edit:
-  backend: qwen
+modelscope:
+  enabled: true
+  qwen_layered_model_dir: /models/qwen/Qwen-Image-Layered
+  qwen_edit_model_dir: /models/qwen/Qwen-Image-Edit
 
 generate:
   dry_run: false
-  num_workers: 1
-  categories:
-    semantic_edit:
-      enabled: true
-      subtypes: ["delete"]
-      per_source: 1
-    style_edit:
-      enabled: true
-      subtypes: ["contrast", "brightness", "color_tone"]
-      per_source: 1
-    structural_edit:
-      enabled: true
-      subtypes: ["move", "scale"]
-      per_source: 1
-    portrait_attribute:
-      enabled: true
-      subtypes: ["expression"]
-      per_source: 1
-    text_edit:
-      enabled: true
-      subtypes: ["replace_text"]
-      per_source: 1
-
-quotas:
-  target_total: 50000
+  category_to_task:
+    人物物体一致性: consistency_edit
+    物体一致性: semantic_edit
+    物理变化: structural_edit
 
 qa:
-  enabled: true
   allowed_region_dilation_px: 7
   max_mse_outside_region: 2.0
   min_ssim_outside_region: 0.995
-  max_changed_pixel_ratio_outside_region: 0.005
+  max_changed_pixel_ratio_outside_region: 0.01
 
 pipeline:
-  resume: true
   ingest: true
-  filter: true
   decompose: true
   generate: true
   export: true
-  lint: true
   qa: true
-
-backend_runtime:
-  device: cuda
-  use_half: true
-
-categories:
-  - portrait_attribute
-  - semantic_edit
-  - style_edit
-  - structural_edit
-  - text_edit
-
-scenes: ["mixed", "indoor", "outdoor", "urban", "nature"]
-json_logs: true
+  resume: true

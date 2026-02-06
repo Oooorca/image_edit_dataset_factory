@@ -10,8 +10,7 @@ class EditorBackend(ABC):
     def inpaint(
         self, image_rgb: np.ndarray, mask: np.ndarray, prompt: str | None = None
     ) -> np.ndarray:
-        """Inpaint masked region and return an RGB image."""
+        """Inpaint a region defined by mask and return edited image."""
 
     def edit(self, image_rgb: np.ndarray, mask: np.ndarray, prompt: str) -> np.ndarray:
-        """Default edit falls back to inpainting behavior."""
         return self.inpaint(image_rgb=image_rgb, mask=mask, prompt=prompt)

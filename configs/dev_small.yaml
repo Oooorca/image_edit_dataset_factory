@@ -1,88 +1,58 @@
 paths:
-  root: .
-  data_dir: data
-  outputs_dir: outputs
-  logs_dir: logs
+  project_root: .
+  data_root: ./data
+  output_root: ./outputs
+  logs_root: ./logs
 
 ingest:
-  source_dir: data/demo_input
-  manifest_path: null
-  symlink: false
+  include_categories:
+    - 人物物体一致性
+    - 物体一致性
+    - 物理变化
   recursive: true
+  max_images_per_category: 1
 
 filter:
-  min_width: 256
-  min_height: 256
+  enabled: true
+  min_width: 64
+  min_height: 64
   reject_grayscale: false
   reject_borders: false
-  reject_text_like: false
 
-decompose:
-  backend: mock
-  max_layers: 4
-  num_workers: 1
-  overwrite: true
+backends:
+  use_modelscope: false
+  layered_backend: mock
+  edit_backend: opencv
+  device: cpu
 
-edit:
-  backend: opencv
+modelscope:
+  enabled: false
+  qwen_layered_model_dir: null
+  qwen_edit_model_dir: null
 
 generate:
   dry_run: false
-  num_workers: 1
-  categories:
-    semantic_edit:
-      enabled: true
-      subtypes: ["delete"]
-      per_source: 1
-    style_edit:
-      enabled: true
-      subtypes: ["contrast", "brightness", "color_tone"]
-      per_source: 1
-    structural_edit:
-      enabled: true
-      subtypes: ["move", "scale"]
-      per_source: 1
-    portrait_attribute:
-      enabled: false
-      subtypes: []
-      per_source: 0
-    text_edit:
-      enabled: false
-      subtypes: []
-      per_source: 0
-
-quotas:
-  target_total: 20
-  per_category:
-    semantic_edit: 8
-    style_edit: 8
-    structural_edit: 8
+  category_to_task:
+    人物物体一致性: consistency_edit
+    物体一致性: semantic_edit
+    物理变化: structural_edit
+  subtypes:
+    structural_edit: move
+    semantic_edit: delete
+    consistency_edit: identity
 
 qa:
-  enabled: true
-  allowed_region_dilation_px: 9
+  allowed_region_dilation_px: 7
   max_mse_outside_region: 6.0
-  min_ssim_outside_region: 0.97
-  max_changed_pixel_ratio_outside_region: 0.03
+  min_ssim_outside_region: 0.96
+  max_changed_pixel_ratio_outside_region: 0.05
 
 pipeline:
-  resume: false
   ingest: true
-  filter: true
   decompose: true
   generate: true
   export: true
-  lint: true
   qa: true
+  resume: false
 
-backend_runtime:
-  device: cpu
-  use_half: false
-
-categories:
-  - semantic_edit
-  - style_edit
-  - structural_edit
-
-scenes: ["mixed"]
 json_logs: true

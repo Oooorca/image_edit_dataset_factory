@@ -6,108 +6,87 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
-from image_edit_dataset_factory.core.enums import Category
+from image_edit_dataset_factory.core.enums import DEFAULT_CATEGORY_TO_TASK
 
 
 class PathsConfig(BaseModel):
-    root: str = "."
-    data_dir: str = "data"
-    outputs_dir: str = "outputs"
-    logs_dir: str = "logs"
+    project_root: str = "."
+    data_root: str = "./data"
+    output_root: str = "./outputs"
+    logs_root: str = "./logs"
 
 
 class IngestConfig(BaseModel):
-    source_dir: str = "data/input"
-    manifest_path: str | None = None
-    symlink: bool = True
+    include_categories: list[str] = Field(
+        default_factory=lambda: [
+            "人物物体一致性",
+            "物体一致性",
+            "物理变化",
+        ]
+    )
     recursive: bool = True
+    max_images_per_category: int = 50
 
 
 class FilterConfig(BaseModel):
-    min_width: int = 3840
-    min_height: int = 2160
-    reject_grayscale: bool = True
-    reject_borders: bool = True
-    reject_text_like: bool = True
-    allowed_extensions: list[str] = Field(
-        default_factory=lambda: [".jpg", ".jpeg", ".png", ".webp"]
-    )
-
-
-class DecomposeConfig(BaseModel):
-    backend: str = "mock"
-    max_layers: int = 8
-    num_workers: int = 2
-    overwrite: bool = False
-
-
-class EditBackendConfig(BaseModel):
-    backend: str = "opencv"
-
-
-class GenerationCategoryConfig(BaseModel):
     enabled: bool = True
-    subtypes: list[str] = Field(default_factory=list)
-    per_source: int = 1
+    min_width: int = 256
+    min_height: int = 256
+    reject_grayscale: bool = False
+    reject_borders: bool = False
+
+
+class ModelScopeConfig(BaseModel):
+    enabled: bool = False
+    cache_dir: str | None = None
+    qwen_layered_model_dir: str | None = None
+    qwen_edit_model_dir: str | None = None
+
+
+class BackendConfig(BaseModel):
+    layered_backend: str = "mock"
+    edit_backend: str = "opencv"
+    use_modelscope: bool = False
+    device: str = "cpu"
 
 
 class GenerateConfig(BaseModel):
     dry_run: bool = False
-    num_workers: int = 2
-    categories: dict[str, GenerationCategoryConfig] = Field(default_factory=dict)
-
-
-class QuotasConfig(BaseModel):
-    target_total: int = 50000
-    per_category: dict[str, int] = Field(default_factory=dict)
-    per_scene: dict[str, int] = Field(default_factory=dict)
+    category_to_task: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_CATEGORY_TO_TASK))
+    subtypes: dict[str, str] = Field(
+        default_factory=lambda: {
+            "structural_edit": "move",
+            "semantic_edit": "delete",
+            "consistency_edit": "identity",
+        }
+    )
 
 
 class QAConfig(BaseModel):
-    enabled: bool = True
     allowed_region_dilation_px: int = 7
-    max_mse_outside_region: float = 2.0
-    min_ssim_outside_region: float = 0.995
-    max_changed_pixel_ratio_outside_region: float = 0.005
+    max_mse_outside_region: float = 4.0
+    min_ssim_outside_region: float = 0.98
+    max_changed_pixel_ratio_outside_region: float = 0.02
 
 
-class PipelineSwitches(BaseModel):
-    resume: bool = True
+class PipelineConfig(BaseModel):
     ingest: bool = True
-    filter: bool = True
     decompose: bool = True
     generate: bool = True
     export: bool = True
-    lint: bool = True
     qa: bool = True
-
-
-class BackendRuntimeConfig(BaseModel):
-    device: str = "cpu"
-    use_half: bool = False
+    resume: bool = False
 
 
 class AppConfig(BaseModel):
     paths: PathsConfig = PathsConfig()
     ingest: IngestConfig = IngestConfig()
     filter: FilterConfig = FilterConfig()
-    decompose: DecomposeConfig = DecomposeConfig()
-    edit: EditBackendConfig = EditBackendConfig()
+    backends: BackendConfig = BackendConfig()
+    modelscope: ModelScopeConfig = ModelScopeConfig()
     generate: GenerateConfig = GenerateConfig()
-    quotas: QuotasConfig = QuotasConfig()
     qa: QAConfig = QAConfig()
-    pipeline: PipelineSwitches = PipelineSwitches()
-    backend_runtime: BackendRuntimeConfig = BackendRuntimeConfig()
-    categories: list[Category] = Field(
-        default_factory=lambda: [
-            Category.PORTRAIT_ATTRIBUTE,
-            Category.SEMANTIC_EDIT,
-            Category.STYLE_EDIT,
-            Category.STRUCTURAL_EDIT,
-            Category.TEXT_EDIT,
-        ]
-    )
-    scenes: list[str] = Field(default_factory=lambda: ["mixed"])
+    pipeline: PipelineConfig = PipelineConfig()
     json_logs: bool = True
 
 
@@ -140,9 +119,3 @@ def load_config(config_path: str | Path, overrides: list[str] | None = None) -> 
         _deep_set(payload, key, value)
 
     return AppConfig.model_validate(payload)
-
-
-def dump_config(config: AppConfig, path: str | Path) -> None:
-    target = Path(path)
-    with target.open("w", encoding="utf-8") as handle:
-        yaml.safe_dump(config.model_dump(mode="json"), handle, sort_keys=False, allow_unicode=True)
