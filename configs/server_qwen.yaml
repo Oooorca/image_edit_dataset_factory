@@ -28,8 +28,8 @@ backends:
 modelscope:
   enabled: true
   cache_dir: /data/modelscope_cache
-  qwen_layered_model_dir: /models/qwen/Qwen-Image-Layered
-  qwen_edit_model_dir: /models/qwen/Qwen-Image-Edit
+  qwen_layered_model_dir: qwen/Qwen-Image-Layered
+  qwen_edit_model_dir: Qwen/Qwen-Image-Edit
 
 generate:
   dry_run: false

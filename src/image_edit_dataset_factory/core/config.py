@@ -39,8 +39,8 @@ class FilterConfig(BaseModel):
 class ModelScopeConfig(BaseModel):
     enabled: bool = False
     cache_dir: str | None = None
-    qwen_layered_model_dir: str | None = None
-    qwen_edit_model_dir: str | None = None
+    qwen_layered_model_dir: str | None = "qwen/Qwen-Image-Layered"
+    qwen_edit_model_dir: str | None = "Qwen/Qwen-Image-Edit"
 
 
 class BackendConfig(BaseModel):

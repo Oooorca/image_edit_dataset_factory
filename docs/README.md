@@ -63,15 +63,33 @@ python -m image_edit_dataset_factory.scripts.run_all \
 
 ## 后续启用 ModelScope Qwen（仅当模型已提前下载）
 
-本项目不会自动下载模型。需要先在服务器手工下载，再配置本地目录：
+本项目不会自动下载模型。需要先在服务器手工下载：
 
 - `qwen/Qwen-Image-Layered`
 - `Qwen/Qwen-Image-Edit`
 
-示例配置见：`configs/server_qwen.yaml`
+示例配置见：`configs/server_qwen.yaml`。其中模型配置可直接写模型ID：
+
+- `qwen/Qwen-Image-Layered`
+- `Qwen/Qwen-Image-Edit`
+
+后端会从本地 ModelScope 缓存自动解析目录（缺失时明确报错）。
 
 ```bash
 python -m image_edit_dataset_factory.scripts.run_all --config configs/server_qwen.yaml
 ```
 
 如果模型目录不存在，程序会报清晰错误并退出，不会触发下载。
+
+## 单样本 Qwen 效果测试脚本
+
+```bash
+python -m image_edit_dataset_factory.scripts.test_qwen_single \
+  --image data/物体一致性/0004_image_129/0004_image_129.jpg \
+  --output-dir outputs/qwen_single \
+  --layered-model-dir qwen/Qwen-Image-Layered \
+  --edit-model-dir Qwen/Qwen-Image-Edit \
+  --device cuda
+```
+
+该脚本会输出：`input.jpg`、`layer_*.jpg`、`layer_*_alpha.png`、`edit_mask.png`、`result.jpg`。

@@ -35,6 +35,7 @@ iedf-run-all = "image_edit_dataset_factory.scripts.run_all:main"
 iedf-run-ingest = "image_edit_dataset_factory.scripts.run_ingest:main"
 iedf-run-generate = "image_edit_dataset_factory.scripts.run_generate:main"
 iedf-run-qa = "image_edit_dataset_factory.scripts.run_qa:main"
+iedf-test-qwen-single = "image_edit_dataset_factory.scripts.test_qwen_single:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
