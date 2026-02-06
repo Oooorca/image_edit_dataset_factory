@@ -1,4 +1,5 @@
 [console_scripts]
 iedf-run-all = image_edit_dataset_factory.scripts.run_all:main
-iedf-run-lint = image_edit_dataset_factory.scripts.run_lint:main
+iedf-run-generate = image_edit_dataset_factory.scripts.run_generate:main
+iedf-run-ingest = image_edit_dataset_factory.scripts.run_ingest:main
 iedf-run-qa = image_edit_dataset_factory.scripts.run_qa:main

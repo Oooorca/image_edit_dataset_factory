@@ -11,10 +11,14 @@ src/image_edit_dataset_factory/backends/__init__.py
 src/image_edit_dataset_factory/backends/edit_base.py
 src/image_edit_dataset_factory/backends/factory.py
 src/image_edit_dataset_factory/backends/layered_base.py
+src/image_edit_dataset_factory/backends/mock_backend.py
 src/image_edit_dataset_factory/backends/mock_backends.py
+src/image_edit_dataset_factory/backends/opencv_fallback.py
 src/image_edit_dataset_factory/backends/opencv_inpaint.py
 src/image_edit_dataset_factory/backends/qwen_image_edit.py
+src/image_edit_dataset_factory/backends/qwen_image_edit_modelscope.py
 src/image_edit_dataset_factory/backends/qwen_layered.py
+src/image_edit_dataset_factory/backends/qwen_layered_modelscope.py
 src/image_edit_dataset_factory/core/__init__.py
 src/image_edit_dataset_factory/core/config.py
 src/image_edit_dataset_factory/core/enums.py
@@ -35,6 +39,7 @@ src/image_edit_dataset_factory/pipeline/qa_step.py
 src/image_edit_dataset_factory/pipeline/quotas.py
 src/image_edit_dataset_factory/pipeline/generate/__init__.py
 src/image_edit_dataset_factory/pipeline/generate/base.py
+src/image_edit_dataset_factory/pipeline/generate/consistency.py
 src/image_edit_dataset_factory/pipeline/generate/portrait.py
 src/image_edit_dataset_factory/pipeline/generate/semantic.py
 src/image_edit_dataset_factory/pipeline/generate/structural.py
