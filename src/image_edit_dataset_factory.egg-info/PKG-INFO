@@ -1,0 +1,86 @@
+Metadata-Version: 2.4
+Name: image-edit-dataset-factory
+Version: 0.1.0
+Summary: Modular pipeline for building and QA-ing image editing datasets
+Author: Codex
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic<3.0,>=2.6
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: numpy>=1.24
+Requires-Dist: Pillow>=10.0
+Requires-Dist: opencv-python-headless>=4.8
+Requires-Dist: scikit-image>=0.22
+Requires-Dist: pandas>=2.0
+Requires-Dist: tqdm>=4.66
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"
+Requires-Dist: pre-commit>=3.7; extra == "dev"
+Provides-Extra: gpu
+Requires-Dist: torch>=2.2; extra == "gpu"
+Requires-Dist: diffusers>=0.31; extra == "gpu"
+Requires-Dist: transformers>=4.45; extra == "gpu"
+Requires-Dist: accelerate>=0.34; extra == "gpu"
+
+# Image Edit Dataset Factory
+
+End-to-end pipeline to ingest source images, filter by spec constraints, decompose layers, generate edit pairs, export to strict dataset layout, and run linter/QA checks.
+
+## Install
+
+```bash
+make install-dev
+```
+
+## Quickstart (mock/fallback run)
+
+1. Create demo inputs (if you do not already have images):
+
+```bash
+python scripts/create_demo_input.py --out data/demo_input --count 4 --size 512
+```
+
+2. Run full pipeline:
+
+```bash
+python -m image_edit_dataset_factory.scripts.run_all --config configs/dev_small.yaml
+```
+
+3. Inspect outputs:
+
+- Dataset: `outputs/dataset/`
+- Global index: `outputs/reports/index.csv`
+- Lint report: `outputs/reports/lint_issues.json`
+- QA report: `outputs/reports/qa/qa_scores.csv`
+
+## CLI Steps
+
+- `python -m image_edit_dataset_factory.scripts.run_ingest --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_filter --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_decompose --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_generate --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_export --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_lint --config configs/default.yaml`
+- `python -m image_edit_dataset_factory.scripts.run_qa --config configs/default.yaml`
+
+## Config Overrides
+
+Use `--set key=value` with dotted keys:
+
+```bash
+python -m image_edit_dataset_factory.scripts.run_all \
+  --config configs/dev_small.yaml \
+  --set generate.dry_run=true \
+  --set qa.max_mse_outside_region=8.0
+```
+
+## Qwen Backends
+
+- Layered decomposition backend: `decompose.backend=qwen`
+- Edit backend: `edit.backend=qwen`
+- If model packages/weights are unavailable, switch to `mock`/`opencv` backends.
+
+See `configs/gpu_qwen.yaml` for an example GPU config.

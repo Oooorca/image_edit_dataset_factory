@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/
+.env
+
+# Runtime artifacts
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

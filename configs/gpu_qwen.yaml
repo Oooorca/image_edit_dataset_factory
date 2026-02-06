@@ -1,0 +1,86 @@
+paths:
+  root: .
+  data_dir: data
+  outputs_dir: outputs
+  logs_dir: logs
+
+ingest:
+  source_dir: data/input
+  manifest_path: null
+  symlink: true
+  recursive: true
+
+filter:
+  min_width: 3840
+  min_height: 2160
+  reject_grayscale: true
+  reject_borders: true
+  reject_text_like: true
+
+decompose:
+  backend: qwen
+  max_layers: 12
+  num_workers: 1
+  overwrite: false
+
+edit:
+  backend: qwen
+
+generate:
+  dry_run: false
+  num_workers: 1
+  categories:
+    semantic_edit:
+      enabled: true
+      subtypes: ["delete"]
+      per_source: 1
+    style_edit:
+      enabled: true
+      subtypes: ["contrast", "brightness", "color_tone"]
+      per_source: 1
+    structural_edit:
+      enabled: true
+      subtypes: ["move", "scale"]
+      per_source: 1
+    portrait_attribute:
+      enabled: true
+      subtypes: ["expression"]
+      per_source: 1
+    text_edit:
+      enabled: true
+      subtypes: ["replace_text"]
+      per_source: 1
+
+quotas:
+  target_total: 50000
+
+qa:
+  enabled: true
+  allowed_region_dilation_px: 7
+  max_mse_outside_region: 2.0
+  min_ssim_outside_region: 0.995
+  max_changed_pixel_ratio_outside_region: 0.005
+
+pipeline:
+  resume: true
+  ingest: true
+  filter: true
+  decompose: true
+  generate: true
+  export: true
+  lint: true
+  qa: true
+
+backend_runtime:
+  device: cuda
+  use_half: true
+
+categories:
+  - portrait_attribute
+  - semantic_edit
+  - style_edit
+  - structural_edit
+  - text_edit
+
+scenes: ["mixed", "indoor", "outdoor", "urban", "nature"]
+json_logs: true
