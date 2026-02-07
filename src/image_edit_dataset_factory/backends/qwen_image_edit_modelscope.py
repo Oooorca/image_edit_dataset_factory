@@ -30,6 +30,39 @@ class QwenImageEditModelScopeBackend(EditorBackend):
         self._pipeline: Any | None = None
         self._runtime: str | None = None
 
+    @staticmethod
+    def _is_cuda_oom(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return "cuda out of memory" in text or ("out of memory" in text and "cuda" in text)
+
+    @staticmethod
+    def _resize_image_and_mask(
+        image_rgb: np.ndarray,
+        mask: np.ndarray,
+        max_side: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        from PIL import Image
+
+        h, w = image_rgb.shape[:2]
+        if max(h, w) <= max_side:
+            return image_rgb, mask
+
+        scale = max_side / float(max(h, w))
+        new_w = max(64, int(w * scale))
+        new_h = max(64, int(h * scale))
+        new_w = (new_w // 8) * 8
+        new_h = (new_h // 8) * 8
+        new_w = max(64, new_w)
+        new_h = max(64, new_h)
+
+        image_pil = Image.fromarray(image_rgb, mode="RGB").resize(
+            (new_w, new_h), Image.Resampling.LANCZOS
+        )
+        mask_pil = Image.fromarray(mask.astype(np.uint8), mode="L").resize(
+            (new_w, new_h), Image.Resampling.NEAREST
+        )
+        return np.asarray(image_pil, dtype=np.uint8), np.asarray(mask_pil, dtype=np.uint8)
+
     def _lazy_init(self) -> None:
         if self._pipeline is not None:
             return
@@ -51,8 +84,18 @@ class QwenImageEditModelScopeBackend(EditorBackend):
                 str(local_dir),
                 torch_dtype=torch_dtype,
             )
+            if hasattr(pipe, "enable_attention_slicing"):
+                pipe.enable_attention_slicing("max")
+            if hasattr(pipe, "enable_vae_slicing"):
+                pipe.enable_vae_slicing()
+            if hasattr(pipe, "enable_vae_tiling"):
+                pipe.enable_vae_tiling()
+
             if self.device.lower().startswith("cuda"):
-                pipe = pipe.to("cuda")
+                if hasattr(pipe, "enable_model_cpu_offload"):
+                    pipe.enable_model_cpu_offload()
+                else:
+                    pipe = pipe.to("cuda")
             else:
                 pipe = pipe.to("cpu")
             self._pipeline = pipe
@@ -143,32 +186,62 @@ class QwenImageEditModelScopeBackend(EditorBackend):
         self._lazy_init()
 
         from PIL import Image
+        import torch
 
-        image_pil = to_pil(image_rgb)
-        mask_pil = Image.fromarray(mask.astype(np.uint8), mode="L")
         text = prompt or "remove object and naturally repair the background"
+        original_h, original_w = image_rgb.shape[:2]
+        max_side_candidates = [1024, 896, 768, 640, 512]
+        max_side_candidates = sorted(set(max_side_candidates), reverse=True)
 
-        attempts = [
-            lambda: self._pipeline(image=image_pil, mask=mask_pil, prompt=text),
-            lambda: self._pipeline(
-                {"image": image_pil, "mask": mask_pil, "prompt": text}
-            ),
-            lambda: self._pipeline({"img": image_pil, "mask": mask_pil, "text": text}),
-            lambda: self._pipeline(prompt=text, image=image_pil, mask_image=mask_pil),
-        ]
+        all_errors: list[str] = []
+        for max_side in max_side_candidates:
+            resized_image, resized_mask = self._resize_image_and_mask(
+                image_rgb=image_rgb,
+                mask=mask,
+                max_side=max_side,
+            )
+            image_pil = to_pil(resized_image)
+            mask_pil = Image.fromarray(resized_mask.astype(np.uint8), mode="L")
 
-        output: Any | None = None
-        errors: list[str] = []
-        for fn in attempts:
-            try:
-                output = fn()
-                result = self._extract_output_image(output)
-                if result is not None:
+            attempts = [
+                lambda: self._pipeline(image=image_pil, mask=mask_pil, prompt=text),
+                lambda: self._pipeline(
+                    {"image": image_pil, "mask": mask_pil, "prompt": text}
+                ),
+                lambda: self._pipeline({"img": image_pil, "mask": mask_pil, "text": text}),
+                lambda: self._pipeline(prompt=text, image=image_pil, mask_image=mask_pil),
+            ]
+
+            per_scale_errors: list[str] = []
+            for fn in attempts:
+                try:
+                    with torch.inference_mode():
+                        output = fn()
+                    result = self._extract_output_image(output)
+                    if result is None:
+                        per_scale_errors.append("pipeline returned no valid output image")
+                        continue
+
+                    if result.shape[:2] != (original_h, original_w):
+                        result = np.asarray(
+                            Image.fromarray(result).resize(
+                                (original_w, original_h), Image.Resampling.LANCZOS
+                            ),
+                            dtype=np.uint8,
+                        )
                     return result
-            except Exception as exc:  # pragma: no cover
-                errors.append(str(exc))
+                except Exception as exc:  # pragma: no cover
+                    if self._is_cuda_oom(exc):
+                        torch.cuda.empty_cache()
+                    per_scale_errors.append(str(exc))
+
+            all_errors.append(
+                f"max_side={max_side}: {' | '.join(per_scale_errors) if per_scale_errors else 'failed'}"
+            )
+            if self.device.lower().startswith("cuda"):
+                torch.cuda.empty_cache()
 
         raise RuntimeError(
             "Qwen image edit inference failed or produced no valid output image. "
-            f"runtime={self._runtime}, errors={' | '.join(errors)}"
+            f"runtime={self._runtime}, attempts={' || '.join(all_errors)}"
         )

@@ -111,7 +111,15 @@ def main() -> int:
     write_mask(out_dir / "edit_mask.png", mask)
 
     editor = QwenImageEditModelScopeBackend(model_dir=args.edit_model_dir, device=args.device)
-    result = editor.inpaint(image, mask, prompt=args.prompt)
+    try:
+        result = editor.inpaint(image, mask, prompt=args.prompt)
+    except RuntimeError as exc:
+        if args.device.lower().startswith("cuda") and "out of memory" in str(exc).lower():
+            print("[warn] CUDA OOM detected; retrying on CPU for single-image smoke test")
+            editor = QwenImageEditModelScopeBackend(model_dir=args.edit_model_dir, device="cpu")
+            result = editor.inpaint(image, mask, prompt=args.prompt)
+        else:
+            raise
     write_image_rgb(out_dir / "result.jpg", result)
 
     print(f"saved test outputs to: {out_dir}")
