@@ -48,7 +48,10 @@ def run_decompose(cfg: AppConfig) -> Path:
     records: list[dict[str, object]] = []
     for source in rows:
         image = read_image_rgb(source.image_path)
-        layers = backend.decompose(image)
+        if hasattr(backend, "decompose_from_path"):
+            layers = backend.decompose_from_path(source.image_path, sample_id=source.source_id)
+        else:
+            layers = backend.decompose(image)
 
         source_dir = out_dir / source.source_id
         source_dir.mkdir(parents=True, exist_ok=True)

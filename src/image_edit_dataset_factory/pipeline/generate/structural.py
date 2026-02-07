@@ -42,7 +42,15 @@ class StructuralGenerator(BaseGenerator):
             roi_mask = mask[y0 : y1 + 1, x0 : x1 + 1]
 
             # Inpaint old location
-            base = self.context.edit_backend.inpaint(image, mask, prompt="repair hole")
+            if hasattr(self.context.edit_backend, "inpaint_from_path"):
+                base = self.context.edit_backend.inpaint_from_path(
+                    image_path=src_path,
+                    mask_path=mask_path,
+                    prompt="repair hole",
+                    sample_id=source.source_id,
+                )
+            else:
+                base = self.context.edit_backend.inpaint(image, mask, prompt="repair hole")
 
             # Move region slightly to simulate structural edit
             dx = max(5, int(image.shape[1] * 0.06))

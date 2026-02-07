@@ -148,7 +148,7 @@ class QwenImageEditModelScopeBackend(EditorBackend):
             return None
 
         if hasattr(output, "images"):
-            images = getattr(output, "images")
+            images = output.images
             if isinstance(images, list) and images:
                 return QwenImageEditModelScopeBackend._extract_output_image(images[0])
 
@@ -190,8 +190,8 @@ class QwenImageEditModelScopeBackend(EditorBackend):
     ) -> np.ndarray:
         self._lazy_init()
 
-        from PIL import Image
         import torch
+        from PIL import Image
 
         text = prompt or "remove object and naturally repair the background"
         original_h, original_w = image_rgb.shape[:2]
@@ -206,19 +206,18 @@ class QwenImageEditModelScopeBackend(EditorBackend):
                 max_side=max_side,
             )
             image_pil = to_pil(resized_image)
-            mask_pil = Image.fromarray(resized_mask.astype(np.uint8), mode="L")
 
             # QwenImageEditPipeline (diffusers) in this env does not accept `mask`.
             # We run full-image edit first, then blend edited region by mask.
             attempts = [
-                lambda: self._pipeline(
+                lambda image_pil=image_pil: self._pipeline(
                     image=image_pil,
                     prompt=text,
                     num_inference_steps=30,
                     output_type="pil",
                     return_dict=True,
                 ),
-                lambda: self._pipeline(
+                lambda image_pil=image_pil: self._pipeline(
                     image=image_pil,
                     prompt=text,
                     num_inference_steps=24,
@@ -269,7 +268,8 @@ class QwenImageEditModelScopeBackend(EditorBackend):
                     per_scale_errors.append(str(exc))
 
             all_errors.append(
-                f"max_side={max_side}: {' | '.join(per_scale_errors) if per_scale_errors else 'failed'}"
+                "max_side="
+                f"{max_side}: {' | '.join(per_scale_errors) if per_scale_errors else 'failed'}"
             )
             if self.device.lower().startswith("cuda"):
                 torch.cuda.empty_cache()

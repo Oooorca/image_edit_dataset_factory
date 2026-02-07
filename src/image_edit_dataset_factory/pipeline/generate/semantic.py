@@ -38,7 +38,15 @@ class SemanticGenerator(BaseGenerator):
         if self.context.cfg.generate.dry_run:
             edited = image.copy()
         else:
-            edited = self.context.edit_backend.inpaint(image, mask, prompt="delete object")
+            if hasattr(self.context.edit_backend, "inpaint_from_path"):
+                edited = self.context.edit_backend.inpaint_from_path(
+                    image_path=src_path,
+                    mask_path=mask_path,
+                    prompt="delete object",
+                    sample_id=source.source_id,
+                )
+            else:
+                edited = self.context.edit_backend.inpaint(image, mask, prompt="delete object")
         write_image_rgb(result_path, edited)
 
         return SampleRecord(

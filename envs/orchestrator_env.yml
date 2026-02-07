@@ -1,0 +1,16 @@
+name: iedf-orchestrator
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy>=1.24
+      - pillow>=10
+      - opencv-python>=4.8
+      - pyyaml>=6
+      - tqdm>=4.66
+      - scikit-image>=0.22
+      - pydantic>=2.6,<3
+      - httpx>=0.27
+      - -e .

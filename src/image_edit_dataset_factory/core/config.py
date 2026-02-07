@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from image_edit_dataset_factory.core.enums import DEFAULT_CATEGORY_TO_TASK
 
@@ -50,6 +50,38 @@ class BackendConfig(BaseModel):
     device: str = "cpu"
 
 
+class ServiceEndpointConfig(BaseModel):
+    enabled: bool = False
+    endpoint: str
+    timeout_sec: float = 120.0
+    max_retries: int = 2
+    backoff_sec: float = 1.0
+    send_mode: str = "base64"
+    fallback_to_mock: bool = True
+
+    @field_validator("send_mode")
+    @classmethod
+    def _validate_send_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"path", "base64"}:
+            msg = f"send_mode must be one of path/base64, got: {value}"
+            raise ValueError(msg)
+        return normalized
+
+
+class ServicesConfig(BaseModel):
+    api_mode: bool = False
+    request_batch_size: int = 1
+    layered: ServiceEndpointConfig = ServiceEndpointConfig(
+        enabled=False,
+        endpoint="http://127.0.0.1:8101",
+    )
+    edit: ServiceEndpointConfig = ServiceEndpointConfig(
+        enabled=False,
+        endpoint="http://127.0.0.1:8102",
+    )
+
+
 class GenerateConfig(BaseModel):
     dry_run: bool = False
     category_to_task: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_CATEGORY_TO_TASK))
@@ -84,6 +116,7 @@ class AppConfig(BaseModel):
     filter: FilterConfig = FilterConfig()
     backends: BackendConfig = BackendConfig()
     modelscope: ModelScopeConfig = ModelScopeConfig()
+    services: ServicesConfig = ServicesConfig()
     generate: GenerateConfig = GenerateConfig()
     qa: QAConfig = QAConfig()
     pipeline: PipelineConfig = PipelineConfig()

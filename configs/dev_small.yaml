@@ -25,6 +25,26 @@ backends:
   edit_backend: opencv
   device: cpu
 
+services:
+  api_mode: false
+  request_batch_size: 1
+  layered:
+    enabled: false
+    endpoint: http://127.0.0.1:8101
+    timeout_sec: 120
+    max_retries: 1
+    backoff_sec: 0.5
+    send_mode: base64
+    fallback_to_mock: true
+  edit:
+    enabled: false
+    endpoint: http://127.0.0.1:8102
+    timeout_sec: 180
+    max_retries: 1
+    backoff_sec: 0.5
+    send_mode: base64
+    fallback_to_mock: true
+
 modelscope:
   enabled: false
   qwen_layered_model_dir: null

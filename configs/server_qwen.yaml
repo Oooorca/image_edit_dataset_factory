@@ -20,10 +20,30 @@ filter:
   reject_borders: false
 
 backends:
-  use_modelscope: true
-  layered_backend: qwen
-  edit_backend: qwen
+  use_modelscope: false
+  layered_backend: api
+  edit_backend: api
   device: cpu
+
+services:
+  api_mode: true
+  request_batch_size: 1
+  layered:
+    enabled: true
+    endpoint: http://127.0.0.1:8101
+    timeout_sec: 180
+    max_retries: 2
+    backoff_sec: 1.0
+    send_mode: path
+    fallback_to_mock: false
+  edit:
+    enabled: true
+    endpoint: http://127.0.0.1:8102
+    timeout_sec: 360
+    max_retries: 2
+    backoff_sec: 1.0
+    send_mode: path
+    fallback_to_mock: false
 
 modelscope:
   enabled: true
