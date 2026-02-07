@@ -147,6 +147,11 @@ class QwenImageEditModelScopeBackend(EditorBackend):
         if output is None:
             return None
 
+        if hasattr(output, "images"):
+            images = getattr(output, "images")
+            if isinstance(images, list) and images:
+                return QwenImageEditModelScopeBackend._extract_output_image(images[0])
+
         if isinstance(output, dict):
             candidates = [
                 output.get("output_img"),
@@ -203,13 +208,23 @@ class QwenImageEditModelScopeBackend(EditorBackend):
             image_pil = to_pil(resized_image)
             mask_pil = Image.fromarray(resized_mask.astype(np.uint8), mode="L")
 
+            # QwenImageEditPipeline (diffusers) in this env does not accept `mask`.
+            # We run full-image edit first, then blend edited region by mask.
             attempts = [
-                lambda: self._pipeline(image=image_pil, mask=mask_pil, prompt=text),
                 lambda: self._pipeline(
-                    {"image": image_pil, "mask": mask_pil, "prompt": text}
+                    image=image_pil,
+                    prompt=text,
+                    num_inference_steps=30,
+                    output_type="pil",
+                    return_dict=True,
                 ),
-                lambda: self._pipeline({"img": image_pil, "mask": mask_pil, "text": text}),
-                lambda: self._pipeline(prompt=text, image=image_pil, mask_image=mask_pil),
+                lambda: self._pipeline(
+                    image=image_pil,
+                    prompt=text,
+                    num_inference_steps=24,
+                    output_type="pil",
+                    return_dict=True,
+                ),
             ]
 
             per_scale_errors: list[str] = []
@@ -222,13 +237,31 @@ class QwenImageEditModelScopeBackend(EditorBackend):
                         per_scale_errors.append("pipeline returned no valid output image")
                         continue
 
-                    if result.shape[:2] != (original_h, original_w):
+                    if result.shape[:2] != resized_image.shape[:2]:
                         result = np.asarray(
                             Image.fromarray(result).resize(
+                                (resized_image.shape[1], resized_image.shape[0]),
+                                Image.Resampling.LANCZOS,
+                            ),
+                            dtype=np.uint8,
+                        )
+
+                    # Localize edit result with mask to emulate inpaint behavior.
+                    mask_f = (resized_mask.astype(np.float32) / 255.0)[..., None]
+                    blended = (
+                        result.astype(np.float32) * mask_f
+                        + resized_image.astype(np.float32) * (1.0 - mask_f)
+                    ).clip(0, 255).astype(np.uint8)
+
+                    if blended.shape[:2] != (original_h, original_w):
+                        result = np.asarray(
+                            Image.fromarray(blended).resize(
                                 (original_w, original_h), Image.Resampling.LANCZOS
                             ),
                             dtype=np.uint8,
                         )
+                    else:
+                        result = blended
                     return result
                 except Exception as exc:  # pragma: no cover
                     if self._is_cuda_oom(exc):
