@@ -13,9 +13,13 @@ from image_edit_dataset_factory.backends.modelscope_utils import (
 
 
 class QwenImageEditModelScopeBackend(EditorBackend):
-    """ModelScope backend for Qwen/Qwen-Image-Edit.
+    """Edit backend for Qwen/Qwen-Image-Edit using local model files.
 
-    The backend only uses locally downloaded weights. It never triggers downloads.
+    Loading strategy:
+    1) try ModelScope pipeline
+    2) fallback to diffusers pipeline from local dir
+
+    No download is triggered by this class.
     """
 
     MODEL_ID = "Qwen/Qwen-Image-Edit"
@@ -24,6 +28,7 @@ class QwenImageEditModelScopeBackend(EditorBackend):
         self.model_dir = model_dir
         self.device = device
         self._pipeline: Any | None = None
+        self._runtime: str | None = None
 
     def _lazy_init(self) -> None:
         if self._pipeline is not None:
@@ -31,34 +36,65 @@ class QwenImageEditModelScopeBackend(EditorBackend):
 
         local_dir = resolve_local_model_dir(self.model_dir, self.MODEL_ID)
 
+        ms_errors: list[str] = []
         try:
             from modelscope.pipelines import pipeline  # type: ignore
             from modelscope.utils.constant import Tasks  # type: ignore
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("modelscope is not installed; install dependencies first.") from exc
 
-        device = "gpu" if self.device.lower().startswith("cuda") else self.device
-        task_candidates = [
-            getattr(Tasks, "image_editing", None),
-            "image_editing",
-            "image-editing",
-            "image_to_image_generation",
-        ]
+            device = "gpu" if self.device.lower().startswith("cuda") else self.device
+            task_candidates = [
+                getattr(Tasks, "image_to_image", None),
+                getattr(Tasks, "image_editing", None),
+                "image-to-image",
+                "image_editing",
+                "image-editing",
+            ]
+            for task in task_candidates:
+                if task is None:
+                    continue
+                try:
+                    self._pipeline = pipeline(
+                        task=task,
+                        model=str(local_dir),
+                        device=device,
+                        model_revision=None,
+                        third_party=None,
+                        external_engine_for_llm=True,
+                    )
+                    self._runtime = "modelscope"
+                    return
+                except Exception as exc:  # pragma: no cover
+                    ms_errors.append(f"task={task!r}: {exc}")
+        except Exception as exc:  # pragma: no cover
+            ms_errors.append(f"import_modelscope_failed: {exc}")
 
-        errors: list[str] = []
-        for task in task_candidates:
-            if task is None:
-                continue
-            try:
-                self._pipeline = pipeline(task=task, model=str(local_dir), device=device)
-                return
-            except Exception as exc:  # pragma: no cover
-                errors.append(f"task={task!r} error={exc}")
+        try:
+            import torch
+            from diffusers import DiffusionPipeline
 
-        raise RuntimeError(
-            "Failed to initialize ModelScope edit pipeline. "
-            f"model_dir={local_dir}. Attempts: {' | '.join(errors)}"
-        )
+            torch_dtype = (
+                torch.bfloat16
+                if self.device.lower().startswith("cuda")
+                else torch.float32
+            )
+            pipe = DiffusionPipeline.from_pretrained(
+                str(local_dir),
+                trust_remote_code=True,
+                torch_dtype=torch_dtype,
+            )
+            if self.device.lower().startswith("cuda"):
+                pipe = pipe.to("cuda")
+            else:
+                pipe = pipe.to("cpu")
+            self._pipeline = pipe
+            self._runtime = "diffusers"
+            return
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Failed to initialize edit backend from local model directory. "
+                f"model_dir={local_dir}. ModelScope attempts: {' | '.join(ms_errors)}. "
+                f"Diffusers fallback error: {exc}."
+            ) from exc
 
     @staticmethod
     def _extract_output_image(output: Any) -> np.ndarray | None:
@@ -72,7 +108,7 @@ class QwenImageEditModelScopeBackend(EditorBackend):
                 output.get("result"),
                 output.get("image"),
             ]
-            imgs = output.get("output_imgs")
+            imgs = output.get("output_imgs") or output.get("images")
             if isinstance(imgs, list) and imgs:
                 candidates.insert(0, imgs[0])
 
@@ -111,8 +147,11 @@ class QwenImageEditModelScopeBackend(EditorBackend):
 
         attempts = [
             lambda: self._pipeline(image=image_pil, mask=mask_pil, prompt=text),
-            lambda: self._pipeline({"image": image_pil, "mask": mask_pil, "prompt": text}),
+            lambda: self._pipeline(
+                {"image": image_pil, "mask": mask_pil, "prompt": text}
+            ),
             lambda: self._pipeline({"img": image_pil, "mask": mask_pil, "text": text}),
+            lambda: self._pipeline(prompt=text, image=image_pil, mask_image=mask_pil),
         ]
 
         output: Any | None = None
@@ -128,5 +167,5 @@ class QwenImageEditModelScopeBackend(EditorBackend):
 
         raise RuntimeError(
             "Qwen image edit inference failed or produced no valid output image. "
-            f"Errors: {' | '.join(errors)}"
+            f"runtime={self._runtime}, errors={' | '.join(errors)}"
         )

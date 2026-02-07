@@ -14,9 +14,13 @@ from image_edit_dataset_factory.utils.mask_ops import alpha_to_mask
 
 
 class QwenLayeredModelScopeBackend(LayeredDecomposer):
-    """ModelScope backend for qwen/Qwen-Image-Layered.
+    """Layered backend for qwen/Qwen-Image-Layered using local model files.
 
-    The backend only uses locally downloaded weights. It never triggers downloads.
+    Loading strategy:
+    1) try ModelScope pipeline (when task registry supports it)
+    2) fallback to diffusers pipeline from local dir
+
+    No download is triggered by this class.
     """
 
     MODEL_ID = "qwen/Qwen-Image-Layered"
@@ -25,6 +29,7 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
         self.model_dir = model_dir
         self.device = device
         self._pipeline: Any | None = None
+        self._runtime: str | None = None
 
     def _lazy_init(self) -> None:
         if self._pipeline is not None:
@@ -32,34 +37,66 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
 
         local_dir = resolve_local_model_dir(self.model_dir, self.MODEL_ID)
 
+        ms_errors: list[str] = []
         try:
             from modelscope.pipelines import pipeline  # type: ignore
             from modelscope.utils.constant import Tasks  # type: ignore
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("modelscope is not installed; install dependencies first.") from exc
 
-        device = "gpu" if self.device.lower().startswith("cuda") else self.device
-        task_candidates = [
-            getattr(Tasks, "image_editing", None),
-            "image_editing",
-            "image-editing",
-            "image_to_image_generation",
-        ]
+            device = "gpu" if self.device.lower().startswith("cuda") else self.device
+            task_candidates = [
+                getattr(Tasks, "image_to_image", None),
+                getattr(Tasks, "image_editing", None),
+                "image-to-image",
+                "image_editing",
+                "image-editing",
+            ]
+            for task in task_candidates:
+                if task is None:
+                    continue
+                try:
+                    self._pipeline = pipeline(
+                        task=task,
+                        model=str(local_dir),
+                        device=device,
+                        model_revision=None,
+                        third_party=None,
+                        external_engine_for_llm=True,
+                    )
+                    self._runtime = "modelscope"
+                    return
+                except Exception as exc:  # pragma: no cover
+                    ms_errors.append(f"task={task!r}: {exc}")
+        except Exception as exc:  # pragma: no cover
+            ms_errors.append(f"import_modelscope_failed: {exc}")
 
-        errors: list[str] = []
-        for task in task_candidates:
-            if task is None:
-                continue
-            try:
-                self._pipeline = pipeline(task=task, model=str(local_dir), device=device)
-                return
-            except Exception as exc:  # pragma: no cover
-                errors.append(f"task={task!r} error={exc}")
+        # Fallback: load local model as diffusers custom pipeline.
+        try:
+            import torch
+            from diffusers import DiffusionPipeline
 
-        raise RuntimeError(
-            "Failed to initialize ModelScope layered pipeline. "
-            f"model_dir={local_dir}. Attempts: {' | '.join(errors)}"
-        )
+            torch_dtype = (
+                torch.bfloat16
+                if self.device.lower().startswith("cuda")
+                else torch.float32
+            )
+            pipe = DiffusionPipeline.from_pretrained(
+                str(local_dir),
+                trust_remote_code=True,
+                torch_dtype=torch_dtype,
+            )
+            if self.device.lower().startswith("cuda"):
+                pipe = pipe.to("cuda")
+            else:
+                pipe = pipe.to("cpu")
+            self._pipeline = pipe
+            self._runtime = "diffusers"
+            return
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Failed to initialize layered backend from local model directory. "
+                f"model_dir={local_dir}. ModelScope attempts: {' | '.join(ms_errors)}. "
+                f"Diffusers fallback error: {exc}."
+            ) from exc
 
     @staticmethod
     def _normalize_alpha(alpha: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -76,7 +113,6 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
 
         def _to_rgba_and_alpha(item: Any) -> tuple[np.ndarray, np.ndarray] | None:
             if hasattr(item, "mode"):
-                # PIL Image
                 try:
                     rgb = pil_to_rgb_array(item)
                     if item.mode == "RGBA":
@@ -108,6 +144,7 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
                 output.get("layers")
                 or output.get("output_layers")
                 or output.get("output_imgs")
+                or output.get("images")
             )
             masks = output.get("masks") or output.get("alphas") or []
 
@@ -133,6 +170,14 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
                     rgba, alpha = parsed
                     layers.append(LayerOutput(layer_id=0, rgba=rgba, alpha=alpha))
 
+        if isinstance(output, list) and not layers:
+            for idx, item in enumerate(output):
+                parsed = _to_rgba_and_alpha(item)
+                if parsed is None:
+                    continue
+                rgba, alpha = parsed
+                layers.append(LayerOutput(layer_id=idx, rgba=rgba, alpha=alpha))
+
         if not layers:
             alpha = np.full((h, w), 255, dtype=np.uint8)
             layers.append(LayerOutput(layer_id=0, rgba=np.dstack([source, alpha]), alpha=alpha))
@@ -155,6 +200,7 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
             lambda: self._pipeline(image=image_pil),
             lambda: self._pipeline({"image": image_pil}),
             lambda: self._pipeline(image_pil),
+            lambda: self._pipeline(prompt="segment layers", image=image_pil),
         ]
 
         output: Any | None = None
@@ -168,8 +214,8 @@ class QwenLayeredModelScopeBackend(LayeredDecomposer):
 
         if output is None:
             raise RuntimeError(
-                "Qwen layered inference failed for all input call patterns. "
-                f"Errors: {' | '.join(errors)}"
+                "Qwen layered inference failed for all call patterns. "
+                f"runtime={self._runtime}, errors={' | '.join(errors)}"
             )
 
         return self._extract_layers(output, image_rgb)
