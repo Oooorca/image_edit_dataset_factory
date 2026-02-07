@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
+import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from importlib import metadata
@@ -34,6 +37,40 @@ EXCLUDE_TOP_LEVEL = {
 class SyncResult:
     runtime: list[str]
     dev: list[str]
+
+
+def _normalize_pkg_name(name: str) -> str:
+    return name.lower().replace("_", "-")
+
+
+def _load_conda_versions(conda_prefix: str | None) -> dict[str, str]:
+    if not conda_prefix:
+        return {}
+    try:
+        proc = subprocess.run(
+            ["conda", "list", "--json", "-p", conda_prefix],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return {}
+
+    try:
+        rows = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+    versions: dict[str, str] = {}
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name")
+            version = row.get("version")
+            if isinstance(name, str) and isinstance(version, str):
+                versions[_normalize_pkg_name(name)] = version
+    return versions
 
 
 def _is_stdlib(name: str) -> bool:
@@ -90,9 +127,16 @@ def _short_version(version: str) -> str:
     return f"{major}.0"
 
 
-def _package_version(package: str) -> str | None:
+def _package_version(package: str, conda_versions: dict[str, str]) -> str | None:
+    package_key = _normalize_pkg_name(package)
+    if package_key in conda_versions:
+        return conda_versions[package_key]
+
     names = SPECIAL_VERSION_SOURCES.get(package, [package])
     for dist_name in names:
+        dist_key = _normalize_pkg_name(dist_name)
+        if dist_key in conda_versions:
+            return conda_versions[dist_key]
         try:
             return metadata.version(dist_name)
         except metadata.PackageNotFoundError:
@@ -100,8 +144,8 @@ def _package_version(package: str) -> str | None:
     return None
 
 
-def _format_dep(package: str) -> str:
-    ver = _package_version(package)
+def _format_dep(package: str, conda_versions: dict[str, str]) -> str:
+    ver = _package_version(package, conda_versions)
     if ver is None:
         return package
     return f"{package}>={_short_version(ver)}"
@@ -140,8 +184,9 @@ def _replace_array_block(lines: list[str], key: str, values: list[str]) -> list[
 
 
 def _sync_dependencies(pyproject: Path, runtime_pkgs: list[str], dev_pkgs: list[str]) -> SyncResult:
-    runtime_deps = [_format_dep(pkg) for pkg in runtime_pkgs]
-    dev_deps = [_format_dep(pkg) for pkg in dev_pkgs]
+    conda_versions = _load_conda_versions(os.getenv("CONDA_PREFIX"))
+    runtime_deps = [_format_dep(pkg, conda_versions) for pkg in runtime_pkgs]
+    dev_deps = [_format_dep(pkg, conda_versions) for pkg in dev_pkgs]
 
     lines = pyproject.read_text(encoding="utf-8").splitlines()
     lines = _replace_array_block(lines, "dependencies", runtime_deps)
@@ -172,6 +217,16 @@ def main() -> int:
         action="store_true",
         help="Include known optional runtime packages (insightface/pytesseract/imagehash).",
     )
+    parser.add_argument(
+        "--show-env",
+        action="store_true",
+        help="Print the python executable and CONDA_PREFIX being used.",
+    )
+    parser.add_argument(
+        "--conda-prefix",
+        default=os.getenv("CONDA_PREFIX"),
+        help="Override conda prefix used for version resolution.",
+    )
     args = parser.parse_args()
 
     pyproject = Path(args.pyproject)
@@ -189,8 +244,16 @@ def main() -> int:
         | set(DEFAULT_DEV_PACKAGES)
     )
 
-    runtime_deps = [_format_dep(pkg) for pkg in runtime_pkgs]
-    dev_deps = [_format_dep(pkg) for pkg in dev_pkgs]
+    conda_prefix = args.conda_prefix
+    conda_versions = _load_conda_versions(conda_prefix)
+
+    runtime_deps = [_format_dep(pkg, conda_versions) for pkg in runtime_pkgs]
+    dev_deps = [_format_dep(pkg, conda_versions) for pkg in dev_pkgs]
+
+    if args.show_env:
+        print(f"[env] python={sys.executable}")
+        print(f"[env] conda_prefix={conda_prefix}")
+        print(f"[env] conda_packages_loaded={len(conda_versions)}")
 
     if args.dry_run:
         print("[runtime dependencies]")

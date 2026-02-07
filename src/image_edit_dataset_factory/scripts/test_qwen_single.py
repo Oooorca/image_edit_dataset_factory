@@ -54,6 +54,11 @@ def main() -> int:
         default="删除主体区域并自然补全背景",
         help="Edit prompt",
     )
+    parser.add_argument(
+        "--skip-layered",
+        action="store_true",
+        help="Skip layered decomposition and use a deterministic fallback mask",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.output_dir)
@@ -62,16 +67,47 @@ def main() -> int:
     image = read_image_rgb(args.image)
     write_image_rgb(out_dir / "input.jpg", image)
 
-    layered = QwenLayeredModelScopeBackend(model_dir=args.layered_model_dir, device=args.device)
-    layers = layered.decompose(image)
+    mask: np.ndarray
+    if args.skip_layered:
+        mask = mask_from_bbox(
+            image.shape[:2],
+            (
+                image.shape[1] // 4,
+                image.shape[0] // 4,
+                (3 * image.shape[1]) // 4,
+                (3 * image.shape[0]) // 4,
+            ),
+        )
+        print("[warn] layered decomposition skipped by --skip-layered; using center fallback mask")
+    else:
+        try:
+            layered = QwenLayeredModelScopeBackend(
+                model_dir=args.layered_model_dir,
+                device=args.device,
+            )
+            layers = layered.decompose(image)
 
-    alphas: list[np.ndarray] = []
-    for idx, layer in enumerate(layers):
-        write_image_rgb(out_dir / f"layer_{idx:02d}.jpg", layer.rgba[:, :, :3])
-        write_mask(out_dir / f"layer_{idx:02d}_alpha.png", layer.alpha)
-        alphas.append(layer.alpha)
+            alphas: list[np.ndarray] = []
+            for idx, layer in enumerate(layers):
+                write_image_rgb(out_dir / f"layer_{idx:02d}.jpg", layer.rgba[:, :, :3])
+                write_mask(out_dir / f"layer_{idx:02d}_alpha.png", layer.alpha)
+                alphas.append(layer.alpha)
+            mask = _pick_mask(alphas, image.shape[:2])
+        except Exception as exc:
+            mask = mask_from_bbox(
+                image.shape[:2],
+                (
+                    image.shape[1] // 4,
+                    image.shape[0] // 4,
+                    (3 * image.shape[1]) // 4,
+                    (3 * image.shape[0]) // 4,
+                ),
+            )
+            print(
+                "[warn] layered decomposition failed, fallback to center mask. "
+                f"error={exc}"
+            )
 
-    mask = _pick_mask(alphas, image.shape[:2])
     write_mask(out_dir / "edit_mask.png", mask)
 
     editor = QwenImageEditModelScopeBackend(model_dir=args.edit_model_dir, device=args.device)
