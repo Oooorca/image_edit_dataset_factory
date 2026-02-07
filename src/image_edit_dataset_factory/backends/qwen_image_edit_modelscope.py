@@ -36,6 +36,31 @@ class QwenImageEditModelScopeBackend(EditorBackend):
 
         local_dir = resolve_local_model_dir(self.model_dir, self.MODEL_ID)
 
+        # Prefer diffusers first for local checkpoints. This path avoids
+        # ModelScope runtime deps like `swift` and is typically more stable.
+        try:
+            import torch
+            from diffusers import DiffusionPipeline
+
+            torch_dtype = (
+                torch.bfloat16
+                if self.device.lower().startswith("cuda")
+                else torch.float32
+            )
+            pipe = DiffusionPipeline.from_pretrained(
+                str(local_dir),
+                torch_dtype=torch_dtype,
+            )
+            if self.device.lower().startswith("cuda"):
+                pipe = pipe.to("cuda")
+            else:
+                pipe = pipe.to("cpu")
+            self._pipeline = pipe
+            self._runtime = "diffusers"
+            return
+        except Exception as diffusers_exc:  # pragma: no cover
+            diffusers_error = str(diffusers_exc)
+
         ms_errors: list[str] = []
         try:
             from modelscope.pipelines import pipeline  # type: ignore
@@ -68,33 +93,11 @@ class QwenImageEditModelScopeBackend(EditorBackend):
         except Exception as exc:  # pragma: no cover
             ms_errors.append(f"import_modelscope_failed: {exc}")
 
-        try:
-            import torch
-            from diffusers import DiffusionPipeline
-
-            torch_dtype = (
-                torch.bfloat16
-                if self.device.lower().startswith("cuda")
-                else torch.float32
-            )
-            pipe = DiffusionPipeline.from_pretrained(
-                str(local_dir),
-                trust_remote_code=True,
-                torch_dtype=torch_dtype,
-            )
-            if self.device.lower().startswith("cuda"):
-                pipe = pipe.to("cuda")
-            else:
-                pipe = pipe.to("cpu")
-            self._pipeline = pipe
-            self._runtime = "diffusers"
-            return
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Failed to initialize edit backend from local model directory. "
-                f"model_dir={local_dir}. ModelScope attempts: {' | '.join(ms_errors)}. "
-                f"Diffusers fallback error: {exc}."
-            ) from exc
+        raise RuntimeError(
+            "Failed to initialize edit backend from local model directory. "
+            f"model_dir={local_dir}. Diffusers error: {diffusers_error}. "
+            f"ModelScope attempts: {' | '.join(ms_errors)}."
+        )
 
     @staticmethod
     def _extract_output_image(output: Any) -> np.ndarray | None:
